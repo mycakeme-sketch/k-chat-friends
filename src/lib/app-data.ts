@@ -13,15 +13,41 @@ export async function fetchDisplayName(sb: SupabaseClient, userId: string): Prom
 }
 
 export async function saveDisplayName(sb: SupabaseClient, userId: string, name: string): Promise<void> {
-  const { error } = await sb.from("profiles").upsert(
-    {
-      user_id: userId,
-      display_name: name.trim(),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
-  if (error) throw error;
+  const trimmed = name.trim();
+  const updatedAt = new Date().toISOString();
+
+  const { data: existing, error: selErr } = await sb
+    .from("profiles")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (selErr) throw selErr;
+
+  if (existing) {
+    const { error } = await sb
+      .from("profiles")
+      .update({ display_name: trimmed, updated_at: updatedAt })
+      .eq("user_id", userId);
+    if (error) throw error;
+    return;
+  }
+
+  const { error: insErr } = await sb.from("profiles").insert({
+    user_id: userId,
+    display_name: trimmed,
+    updated_at: updatedAt,
+  });
+  if (insErr) {
+    if (insErr.code === "23505") {
+      const { error: upErr } = await sb
+        .from("profiles")
+        .update({ display_name: trimmed, updated_at: updatedAt })
+        .eq("user_id", userId);
+      if (upErr) throw upErr;
+      return;
+    }
+    throw insErr;
+  }
 }
 
 export async function fetchAddedFriends(sb: SupabaseClient, userId: string): Promise<string[]> {
@@ -43,15 +69,24 @@ export async function fetchAddedFriendsWithSub(
 }
 
 export async function addFriendRow(sb: SupabaseClient, userId: string, friendId: string): Promise<void> {
-  const { error } = await sb.from("added_friends").upsert(
-    {
-      user_id: userId,
-      friend_id: friendId,
-      subscribed: false,
-    },
-    { onConflict: "user_id,friend_id" },
-  );
-  if (error) throw error;
+  const { data: existing, error: selErr } = await sb
+    .from("added_friends")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("friend_id", friendId)
+    .maybeSingle();
+  if (selErr) throw selErr;
+  if (existing) return;
+
+  const { error: insErr } = await sb.from("added_friends").insert({
+    user_id: userId,
+    friend_id: friendId,
+    subscribed: false,
+  });
+  if (insErr) {
+    if (insErr.code === "23505") return;
+    throw insErr;
+  }
 }
 
 export async function fetchSubscribed(sb: SupabaseClient, userId: string, friendId: string): Promise<boolean> {

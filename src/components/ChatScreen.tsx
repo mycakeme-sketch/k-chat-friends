@@ -37,12 +37,15 @@ export function ChatScreen({ friend }: Props) {
   const [hintLoading, setHintLoading] = useState(false);
   const [subscribed, setSubscribedState] = useState(false);
   const [threadReady, setThreadReady] = useState(false);
+  const [threadErr, setThreadErr] = useState<string | null>(null);
+  const [sendErr, setSendErr] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
+      setThreadErr(null);
       try {
         await addFriendRow(supabase, user.id, friend.id);
         const sub = await fetchSubscribed(supabase, user.id, friend.id);
@@ -61,6 +64,22 @@ export function ChatScreen({ friend }: Props) {
           await replaceMessages(supabase, user.id, friend.id, seed);
           if (!cancelled) setRows(seed);
         }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // #region agent log
+        fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
+          body: JSON.stringify({
+            sessionId: "6ffeb9",
+            location: "ChatScreen.tsx:threadInit",
+            message: "thread init failed",
+            data: { hypothesisId: "H3", error: msg, friendId: friend.id },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        if (!cancelled) setThreadErr(msg);
       } finally {
         if (!cancelled) setThreadReady(true);
       }
@@ -100,6 +119,25 @@ export function ChatScreen({ friend }: Props) {
           }),
         });
         const data = (await res.json()) as { reply?: string; error?: string };
+        // #region agent log
+        fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
+          body: JSON.stringify({
+            sessionId: "6ffeb9",
+            location: "ChatScreen.tsx:sendAssistant",
+            message: "/api/chat response",
+            data: {
+              hypothesisId: "H5",
+              status: res.status,
+              ok: res.ok,
+              hasReply: !!data.reply,
+              err: data.error ?? null,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         if (!res.ok) throw new Error(data.error || "Chat failed");
         const reply = data.reply ?? "";
         const withBot: StoredMessage[] = [
@@ -124,9 +162,31 @@ export function ChatScreen({ friend }: Props) {
     const text = input.trim();
     if (!text || loading || showPaywall) return;
     setInput("");
+    setSendErr(null);
     const userRow: StoredMessage = { role: "user", content: text, at: Date.now() };
-    const next = [...rows, userRow];
-    await persist(next);
+    const prevRows = rows;
+    const next = [...prevRows, userRow];
+    try {
+      await persist(next);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // #region agent log
+      fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
+        body: JSON.stringify({
+          sessionId: "6ffeb9",
+          location: "ChatScreen.tsx:sendUser",
+          message: "persist failed",
+          data: { hypothesisId: "H4", error: msg },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      setRows(prevRows);
+      setSendErr(`메시지 저장 실패: ${msg}`);
+      return;
+    }
     await sendAssistant(next);
   }, [input, loading, showPaywall, rows, persist, sendAssistant]);
 
@@ -184,6 +244,16 @@ export function ChatScreen({ friend }: Props) {
     <PaddedAppFrame>
       <MobileShell className="min-h-dvh bg-zinc-100">
         <div className="flex min-h-dvh flex-col">
+          {threadErr ? (
+            <div className="shrink-0 border-b border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+              대화를 불러오지 못했습니다: {threadErr}
+            </div>
+          ) : null}
+          {sendErr ? (
+            <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="alert">
+              {sendErr}
+            </div>
+          ) : null}
           <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-3 py-2">
             <Link
               href="/friends"
