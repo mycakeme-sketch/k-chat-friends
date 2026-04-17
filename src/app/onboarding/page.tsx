@@ -2,6 +2,8 @@
 
 import { MobileShell, PaddedAppFrame } from "@/components/MobileShell";
 import { useAuth } from "@/contexts/auth-context";
+import { debugIngest } from "@/lib/debug-ingest";
+import { formatUnknownError } from "@/lib/format-error";
 import { saveDisplayName } from "@/lib/app-data";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,17 +20,11 @@ export default function OnboardingPage() {
     const n = name.trim();
     if (!n || !user) {
       // #region agent log
-      fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-        body: JSON.stringify({
-          sessionId: "6ffeb9",
-          location: "onboarding/page.tsx:submit",
-          message: "submit early exit",
-          data: { hypothesisId: "H2", hasUser: !!user, nameLen: n.length },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      debugIngest({
+        location: "onboarding/page.tsx:submit",
+        message: "submit early exit",
+        data: { hypothesisId: "H2", hasUser: !!user, nameLen: n.length },
+      });
       // #endregion
       if (!user) setErr("로그인 세션이 없습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.");
       return;
@@ -37,47 +33,29 @@ export default function OnboardingPage() {
     setSaving(true);
     try {
       // #region agent log
-      fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-        body: JSON.stringify({
-          sessionId: "6ffeb9",
-          location: "onboarding/page.tsx:beforeSave",
-          message: "saveDisplayName start",
-          data: { hypothesisId: "H1", userIdPrefix: user.id.slice(0, 8) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      debugIngest({
+        location: "onboarding/page.tsx:beforeSave",
+        message: "saveDisplayName start",
+        data: { hypothesisId: "H1", userIdPrefix: user.id.slice(0, 8) },
+      });
       // #endregion
       await saveDisplayName(supabase, user.id, n);
       // #region agent log
-      fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-        body: JSON.stringify({
-          sessionId: "6ffeb9",
-          location: "onboarding/page.tsx:afterSave",
-          message: "saveDisplayName ok",
-          data: { hypothesisId: "H1" },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      debugIngest({
+        location: "onboarding/page.tsx:afterSave",
+        message: "saveDisplayName ok",
+        data: { hypothesisId: "H1" },
+      });
       // #endregion
       router.replace("/friends");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = formatUnknownError(e);
       // #region agent log
-      fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-        body: JSON.stringify({
-          sessionId: "6ffeb9",
-          location: "onboarding/page.tsx:catch",
-          message: "saveDisplayName failed",
-          data: { hypothesisId: "H1", error: msg },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      debugIngest({
+        location: "onboarding/page.tsx:catch",
+        message: "saveDisplayName failed",
+        data: { hypothesisId: "H1", error: msg },
+      });
       // #endregion
       setErr(msg);
     } finally {

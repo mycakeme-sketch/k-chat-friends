@@ -10,6 +10,8 @@ import {
   setSubscribedRow,
   type StoredMessage,
 } from "@/lib/app-data";
+import { debugIngest } from "@/lib/debug-ingest";
+import { formatUnknownError } from "@/lib/format-error";
 import type { ChatMessage, FriendProfile } from "@/types/chat";
 import Image from "next/image";
 import Link from "next/link";
@@ -65,19 +67,13 @@ export function ChatScreen({ friend }: Props) {
           if (!cancelled) setRows(seed);
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = formatUnknownError(e);
         // #region agent log
-        fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-          body: JSON.stringify({
-            sessionId: "6ffeb9",
-            location: "ChatScreen.tsx:threadInit",
-            message: "thread init failed",
-            data: { hypothesisId: "H3", error: msg, friendId: friend.id },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
+        debugIngest({
+          location: "ChatScreen.tsx:threadInit",
+          message: "thread init failed",
+          data: { hypothesisId: "H3", error: msg, friendId: friend.id },
+        });
         // #endregion
         if (!cancelled) setThreadErr(msg);
       } finally {
@@ -120,23 +116,17 @@ export function ChatScreen({ friend }: Props) {
         });
         const data = (await res.json()) as { reply?: string; error?: string };
         // #region agent log
-        fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-          body: JSON.stringify({
-            sessionId: "6ffeb9",
-            location: "ChatScreen.tsx:sendAssistant",
-            message: "/api/chat response",
-            data: {
-              hypothesisId: "H5",
-              status: res.status,
-              ok: res.ok,
-              hasReply: !!data.reply,
-              err: data.error ?? null,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
+        debugIngest({
+          location: "ChatScreen.tsx:sendAssistant",
+          message: "/api/chat response",
+          data: {
+            hypothesisId: "H5",
+            status: res.status,
+            ok: res.ok,
+            hasReply: !!data.reply,
+            err: data.error ?? null,
+          },
+        });
         // #endregion
         if (!res.ok) throw new Error(data.error || "Chat failed");
         const reply = data.reply ?? "";
@@ -146,7 +136,7 @@ export function ChatScreen({ friend }: Props) {
         ];
         await persist(withBot);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Error";
+        const msg = formatUnknownError(e);
         await persist([
           ...history,
           { role: "assistant", content: `Sorry — ${msg}`, at: Date.now() },
@@ -169,19 +159,13 @@ export function ChatScreen({ friend }: Props) {
     try {
       await persist(next);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = formatUnknownError(e);
       // #region agent log
-      fetch("http://127.0.0.1:7758/ingest/41f67bdf-05a4-4700-866e-55deeaf28bf6", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6ffeb9" },
-        body: JSON.stringify({
-          sessionId: "6ffeb9",
-          location: "ChatScreen.tsx:sendUser",
-          message: "persist failed",
-          data: { hypothesisId: "H4", error: msg },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
+      debugIngest({
+        location: "ChatScreen.tsx:sendUser",
+        message: "persist failed",
+        data: { hypothesisId: "H4", error: msg },
+      });
       // #endregion
       setRows(prevRows);
       setSendErr(`메시지 저장 실패: ${msg}`);
