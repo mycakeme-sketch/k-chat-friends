@@ -1,3 +1,4 @@
+import { toApiErrorMessage } from "@/lib/api-error-message";
 import { verifyCharacterAdmin } from "@/lib/admin-auth";
 import { configToDbRows } from "@/lib/characters-map";
 import { getDefaultFriendConfig } from "@/lib/friend-defaults";
@@ -27,7 +28,8 @@ export async function POST(req: Request) {
     if (error) throw error;
     return NextResponse.json({ ok: true, count: rows.length });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Seed failed";
+    const msg = toApiErrorMessage(e, "Seed failed");
+    console.error("[api/admin/characters/seed]", e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

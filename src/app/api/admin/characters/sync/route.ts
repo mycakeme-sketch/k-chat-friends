@@ -1,3 +1,4 @@
+import { toApiErrorMessage } from "@/lib/api-error-message";
 import { verifyCharacterAdmin } from "@/lib/admin-auth";
 import { configToDbRows } from "@/lib/characters-map";
 import type { FriendConfigStorage } from "@/lib/friend-defaults";
@@ -46,7 +47,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Sync failed";
+    const msg = toApiErrorMessage(e, "Sync failed");
+    console.error("[api/admin/characters/sync]", e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
