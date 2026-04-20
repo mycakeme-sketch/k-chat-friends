@@ -1,4 +1,5 @@
 import { AuthProvider } from "@/contexts/auth-context";
+import { FriendConfigProvider } from "@/contexts/friend-config-context";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
@@ -42,7 +43,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${notoKr.variable} antialiased font-sans`}
         style={{ fontFamily: "var(--font-noto-kr), var(--font-geist-sans), system-ui" }}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <FriendConfigProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </FriendConfigProvider>
       </body>
     </html>
   );

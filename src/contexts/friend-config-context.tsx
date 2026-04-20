@@ -1,0 +1,197 @@
+"use client";
+
+import {
+  dbRowsToConfig,
+  type CharacterRow,
+} from "@/lib/characters-map";
+import { createClient } from "@/lib/supabase/browser-client";
+import {
+  getDefaultFriendConfig,
+  type FriendConfigStorage,
+} from "@/lib/friend-defaults";
+import type { FriendProfile } from "@/types/chat";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+type PromptBundle = { system: string; hintStyle: string };
+
+type Ctx = {
+  ready: boolean;
+  /** DB에 행이 하나라도 있으면 true (시드 여부 안내용) */
+  hasDbRows: boolean;
+  config: FriendConfigStorage;
+  friends: FriendProfile[];
+  getFriend: (id: string) => FriendProfile | undefined;
+  getWelcome: (friendId: string) => string;
+  getPromptBundle: (promptId: string) => PromptBundle;
+  setConfig: (next: FriendConfigStorage | ((prev: FriendConfigStorage) => FriendConfigStorage)) => void;
+  /** Supabase에서 다시 불러오기 */
+  refresh: () => Promise<void>;
+  /** 전체 config를 서버(Supabase)에 저장 — 모든 사용자에게 반영 */
+  saveToServer: (adminSecret: string, configToSave: FriendConfigStorage) => Promise<void>;
+  /** 코드 기본값(Noah/Yoon)을 DB에 삽입·갱신 */
+  seedDefaultsToServer: (adminSecret: string) => Promise<void>;
+};
+
+const FriendConfigContext = createContext<Ctx | null>(null);
+
+export function FriendConfigProvider({ children }: { children: ReactNode }) {
+  const [config, setConfigState] = useState<FriendConfigStorage>(() => getDefaultFriendConfig());
+  const [ready, setReady] = useState(false);
+  const [hasDbRows, setHasDbRows] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const sb = createClient();
+      const { data, error } = await sb
+        .from("characters")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      if (data?.length) {
+        setConfigState(dbRowsToConfig(data as CharacterRow[]));
+        setHasDbRows(true);
+      } else {
+        setConfigState(getDefaultFriendConfig());
+        setHasDbRows(false);
+      }
+    } catch {
+      setConfigState(getDefaultFriendConfig());
+      setHasDbRows(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sb = createClient();
+        const { data, error } = await sb
+          .from("characters")
+          .select("*")
+          .order("sort_order", { ascending: true });
+        if (cancelled) return;
+        if (error) throw error;
+        if (data?.length) {
+          setConfigState(dbRowsToConfig(data as CharacterRow[]));
+          setHasDbRows(true);
+        } else {
+          setConfigState(getDefaultFriendConfig());
+          setHasDbRows(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setConfigState(getDefaultFriendConfig());
+          setHasDbRows(false);
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setConfig = useCallback((next: FriendConfigStorage | ((prev: FriendConfigStorage) => FriendConfigStorage)) => {
+    setConfigState(next);
+  }, []);
+
+  const saveToServer = useCallback(async (adminSecret: string, configToSave: FriendConfigStorage) => {
+    const res = await fetch("/api/admin/characters/sync", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-secret": adminSecret,
+      },
+      body: JSON.stringify({ config: configToSave }),
+    });
+    const j = (await res.json()) as { error?: string };
+    if (!res.ok) throw new Error(j.error || "Save failed");
+    await refresh();
+  }, [refresh]);
+
+  const seedDefaultsToServer = useCallback(async (adminSecret: string) => {
+    const res = await fetch("/api/admin/characters/seed", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-secret": adminSecret,
+      },
+      body: JSON.stringify({}),
+    });
+    const j = (await res.json()) as { error?: string };
+    if (!res.ok) throw new Error(j.error || "Seed failed");
+    await refresh();
+  }, [refresh]);
+
+  const friends = config.friends;
+
+  const getFriend = useCallback(
+    (id: string) => config.friends.find((f) => f.id === id),
+    [config.friends],
+  );
+
+  const defaults = useMemo(() => getDefaultFriendConfig(), []);
+
+  const getWelcome = useCallback(
+    (friendId: string) =>
+      config.welcomeById[friendId] ?? defaults.welcomeById[friendId] ?? "안녕하세요!",
+    [config.welcomeById, defaults.welcomeById],
+  );
+
+  const getPromptBundle = useCallback(
+    (promptId: string): PromptBundle => {
+      const o = config.promptsByPromptId[promptId];
+      if (o?.system && o?.hintStyle) return o;
+      const d = defaults.promptsByPromptId[promptId];
+      if (d?.system && d?.hintStyle) return d;
+      return { system: "(empty system prompt)", hintStyle: "(empty hint style)" };
+    },
+    [config.promptsByPromptId, defaults.promptsByPromptId],
+  );
+
+  const value = useMemo(
+    () => ({
+      ready,
+      hasDbRows,
+      config,
+      friends,
+      getFriend,
+      getWelcome,
+      getPromptBundle,
+      setConfig,
+      refresh,
+      saveToServer,
+      seedDefaultsToServer,
+    }),
+    [
+      ready,
+      hasDbRows,
+      config,
+      friends,
+      getFriend,
+      getWelcome,
+      getPromptBundle,
+      setConfig,
+      refresh,
+      saveToServer,
+      seedDefaultsToServer,
+    ],
+  );
+
+  return <FriendConfigContext.Provider value={value}>{children}</FriendConfigContext.Provider>;
+}
+
+export function useFriendConfig(): Ctx {
+  const c = useContext(FriendConfigContext);
+  if (!c) throw new Error("useFriendConfig must be used within FriendConfigProvider");
+  return c;
+}

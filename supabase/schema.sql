@@ -63,3 +63,27 @@ alter table public.slide_likes enable row level security;
 
 create policy "slide_likes_all" on public.slide_likes
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- 캐릭터(릴스·프롬프트·첫 인사) — 공개 읽기, 쓰기는 서비스 롤(API)만
+create table if not exists public.characters (
+  id text primary key,
+  name text not null default '',
+  tagline text not null default '',
+  avatar text not null default '',
+  prompt_id text not null,
+  slides jsonb not null default '[]'::jsonb,
+  welcome_message text not null default '',
+  system_prompt text not null default '',
+  hint_style text not null default '',
+  sort_order int not null default 0,
+  updated_at timestamptz default now()
+);
+
+create index if not exists characters_sort_idx on public.characters (sort_order);
+
+alter table public.characters enable row level security;
+
+create policy "characters_select_public" on public.characters
+  for select using (true);
+
+-- anon은 insert/update/delete 없음 → Next.js API(service role)에서만 편집

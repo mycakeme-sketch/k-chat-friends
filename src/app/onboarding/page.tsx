@@ -2,9 +2,9 @@
 
 import { MobileShell, PaddedAppFrame } from "@/components/MobileShell";
 import { useAuth } from "@/contexts/auth-context";
-import { debugIngest } from "@/lib/debug-ingest";
 import { formatUnknownError } from "@/lib/format-error";
 import { saveDisplayName } from "@/lib/app-data";
+import { appendSupabaseSchemaHint } from "@/lib/supabase-schema-hint";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -19,45 +19,17 @@ export default function OnboardingPage() {
   const submit = async () => {
     const n = name.trim();
     if (!n || !user) {
-      // #region agent log
-      debugIngest({
-        location: "onboarding/page.tsx:submit",
-        message: "submit early exit",
-        data: { hypothesisId: "H2", hasUser: !!user, nameLen: n.length },
-      });
-      // #endregion
       if (!user) setErr("로그인 세션이 없습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.");
       return;
     }
     setErr(null);
     setSaving(true);
     try {
-      // #region agent log
-      debugIngest({
-        location: "onboarding/page.tsx:beforeSave",
-        message: "saveDisplayName start",
-        data: { hypothesisId: "H1", userIdPrefix: user.id.slice(0, 8) },
-      });
-      // #endregion
       await saveDisplayName(supabase, user.id, n);
-      // #region agent log
-      debugIngest({
-        location: "onboarding/page.tsx:afterSave",
-        message: "saveDisplayName ok",
-        data: { hypothesisId: "H1" },
-      });
-      // #endregion
       router.replace("/friends");
     } catch (e) {
       const msg = formatUnknownError(e);
-      // #region agent log
-      debugIngest({
-        location: "onboarding/page.tsx:catch",
-        message: "saveDisplayName failed",
-        data: { hypothesisId: "H1", error: msg },
-      });
-      // #endregion
-      setErr(msg);
+      setErr(appendSupabaseSchemaHint(msg));
     } finally {
       setSaving(false);
     }
@@ -86,7 +58,7 @@ export default function OnboardingPage() {
             Continue
           </button>
           {err ? (
-            <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+            <p className="mt-3 whitespace-pre-wrap rounded-xl bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800" role="alert">
               {err}
             </p>
           ) : null}

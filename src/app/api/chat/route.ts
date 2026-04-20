@@ -1,31 +1,11 @@
+import { fetchCharacterForApi } from "@/lib/characters-server";
 import { getFriend } from "@/data/friends";
 import { getPrompts } from "@/data/prompts";
 import { chatCompletion } from "@/lib/llm";
 import type { ChatMessage } from "@/types/chat";
-import { appendFileSync } from "node:fs";
-import { join } from "node:path";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-
-// #region agent log
-function agentLogApi(location: string, message: string, data: Record<string, unknown>) {
-  try {
-    appendFileSync(
-      join(process.cwd(), "debug-6ffeb9.log"),
-      `${JSON.stringify({
-        sessionId: "6ffeb9",
-        location,
-        message,
-        data,
-        timestamp: Date.now(),
-      })}\n`,
-    );
-  } catch {
-    /* ignore (e.g. read-only FS on serverless) */
-  }
-}
-// #endregion
 
 type Body = {
   friendId?: string;
@@ -46,32 +26,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "friendId and messages required" }, { status: 400 });
   }
 
-  const friend = getFriend(friendId);
-  if (!friend) {
-    return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
-  }
+  const row = await fetchCharacterForApi(friendId);
+  let system: string;
 
-  const { system } = getPrompts(friend.promptId);
+  if (row?.system_prompt?.trim()) {
+    system = row.system_prompt;
+  } else {
+    const pid = row?.prompt_id;
+    const staticFriend = getFriend(friendId);
+    const promptId = staticFriend?.promptId ?? pid;
+    if (!promptId) {
+      return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
+    }
+    try {
+      system = getPrompts(promptId).system;
+    } catch {
+      return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
+    }
+  }
 
   try {
     const text = await chatCompletion(system, messages);
-    // #region agent log
-    agentLogApi("api/chat/route.ts:POST", "chatCompletion ok", {
-      hypothesisId: "H5",
-      friendId,
-      replyLen: text.length,
-    });
-    // #endregion
     return NextResponse.json({ reply: text });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
-    // #region agent log
-    agentLogApi("api/chat/route.ts:POST", "chatCompletion error", {
-      hypothesisId: "H5",
-      friendId,
-      error: msg,
-    });
-    // #endregion
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

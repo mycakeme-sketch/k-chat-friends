@@ -1,3 +1,4 @@
+import { fetchCharacterForApi } from "@/lib/characters-server";
 import { getFriend } from "@/data/friends";
 import { getPrompts } from "@/data/prompts";
 import { chatCompletion } from "@/lib/llm";
@@ -48,21 +49,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "friendId and messages required" }, { status: 400 });
   }
 
-  const friend = getFriend(friendId);
-  if (!friend) {
-    return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
-  }
+  const row = await fetchCharacterForApi(friendId);
+  let friendName: string;
+  let hintStyle: string;
 
-  const { hintStyle } = getPrompts(friend.promptId);
+  if (row) {
+    friendName = row.name || friendId;
+    if (row.hint_style?.trim()) {
+      hintStyle = row.hint_style;
+    } else {
+      const pid = row.prompt_id;
+      const staticFriend = getFriend(friendId);
+      const promptId = staticFriend?.promptId ?? pid;
+      if (!promptId) {
+        return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
+      }
+      try {
+        hintStyle = getPrompts(promptId).hintStyle;
+      } catch {
+        return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
+      }
+    }
+  } else {
+    const friend = getFriend(friendId);
+    if (!friend) {
+      return NextResponse.json({ error: "Unknown friend" }, { status: 404 });
+    }
+    friendName = friend.name;
+    hintStyle = getPrompts(friend.promptId).hintStyle;
+  }
 
   const transcript = messages
     .slice(-12)
-    .map((m) => `${m.role === "user" ? "User" : friend.name}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? "User" : friendName}: ${m.content}`)
     .join("\n");
 
   const system = `${hintStyle}
 
-Friend name for context: ${friend.name}.`;
+Friend name for context: ${friendName}.`;
 
   const userMsg: ChatMessage = {
     role: "user",

@@ -1,7 +1,7 @@
 "use client";
 
-import { WELCOME_BY_FRIEND } from "@/data/welcome";
 import { useAuth } from "@/contexts/auth-context";
+import { useFriendConfig } from "@/contexts/friend-config-context";
 import {
   addFriendRow,
   fetchMessages,
@@ -10,8 +10,8 @@ import {
   setSubscribedRow,
   type StoredMessage,
 } from "@/lib/app-data";
-import { debugIngest } from "@/lib/debug-ingest";
 import { formatUnknownError } from "@/lib/format-error";
+import { appendSupabaseSchemaHint } from "@/lib/supabase-schema-hint";
 import type { ChatMessage, FriendProfile } from "@/types/chat";
 import Image from "next/image";
 import Link from "next/link";
@@ -30,6 +30,7 @@ type Props = {
 const USER_MSG_GATE = 3;
 
 export function ChatScreen({ friend }: Props) {
+  const { getWelcome } = useFriendConfig();
   const { supabase, user } = useAuth();
   const [rows, setRows] = useState<StoredMessage[]>([]);
   const [input, setInput] = useState("");
@@ -59,7 +60,7 @@ export function ChatScreen({ friend }: Props) {
         if (existing.length > 0) {
           setRows(existing);
         } else {
-          const welcome = WELCOME_BY_FRIEND[friend.id] ?? "안녕하세요!";
+          const welcome = getWelcome(friend.id);
           const seed: StoredMessage[] = [
             { role: "assistant", content: welcome, at: Date.now() },
           ];
@@ -68,14 +69,7 @@ export function ChatScreen({ friend }: Props) {
         }
       } catch (e) {
         const msg = formatUnknownError(e);
-        // #region agent log
-        debugIngest({
-          location: "ChatScreen.tsx:threadInit",
-          message: "thread init failed",
-          data: { hypothesisId: "H3", error: msg, friendId: friend.id },
-        });
-        // #endregion
-        if (!cancelled) setThreadErr(msg);
+        if (!cancelled) setThreadErr(appendSupabaseSchemaHint(msg));
       } finally {
         if (!cancelled) setThreadReady(true);
       }
@@ -83,7 +77,7 @@ export function ChatScreen({ friend }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [friend.id, user, supabase]);
+  }, [friend.id, user, supabase, getWelcome]);
 
   const userMsgCount = useMemo(() => rows.filter((m) => m.role === "user").length, [rows]);
 
@@ -115,19 +109,6 @@ export function ChatScreen({ friend }: Props) {
           }),
         });
         const data = (await res.json()) as { reply?: string; error?: string };
-        // #region agent log
-        debugIngest({
-          location: "ChatScreen.tsx:sendAssistant",
-          message: "/api/chat response",
-          data: {
-            hypothesisId: "H5",
-            status: res.status,
-            ok: res.ok,
-            hasReply: !!data.reply,
-            err: data.error ?? null,
-          },
-        });
-        // #endregion
         if (!res.ok) throw new Error(data.error || "Chat failed");
         const reply = data.reply ?? "";
         const withBot: StoredMessage[] = [
@@ -160,15 +141,8 @@ export function ChatScreen({ friend }: Props) {
       await persist(next);
     } catch (e) {
       const msg = formatUnknownError(e);
-      // #region agent log
-      debugIngest({
-        location: "ChatScreen.tsx:sendUser",
-        message: "persist failed",
-        data: { hypothesisId: "H4", error: msg },
-      });
-      // #endregion
       setRows(prevRows);
-      setSendErr(`메시지 저장 실패: ${msg}`);
+      setSendErr(appendSupabaseSchemaHint(`메시지 저장 실패: ${msg}`));
       return;
     }
     await sendAssistant(next);
@@ -229,12 +203,12 @@ export function ChatScreen({ friend }: Props) {
       <MobileShell className="min-h-dvh bg-zinc-100">
         <div className="flex min-h-dvh flex-col">
           {threadErr ? (
-            <div className="shrink-0 border-b border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+            <div className="shrink-0 whitespace-pre-wrap border-b border-red-200 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800" role="alert">
               대화를 불러오지 못했습니다: {threadErr}
             </div>
           ) : null}
           {sendErr ? (
-            <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="alert">
+            <div className="shrink-0 whitespace-pre-wrap border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900" role="alert">
               {sendErr}
             </div>
           ) : null}

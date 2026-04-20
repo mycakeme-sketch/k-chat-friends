@@ -2,7 +2,7 @@
 
 import { MobileShell, PaddedAppFrame } from "@/components/MobileShell";
 import { useAuth } from "@/contexts/auth-context";
-import { FRIENDS } from "@/data/friends";
+import { useFriendConfig } from "@/contexts/friend-config-context";
 import {
   fetchAddedFriendsWithSub,
   fetchDisplayName,
@@ -87,6 +87,7 @@ function FriendPhotoCard({ friend }: { friend: FriendProfile }) {
 }
 
 export function FriendsClient() {
+  const { friends: FRIENDS } = useFriendConfig();
   const { supabase, user } = useAuth();
   const [name, setName] = useState("");
   const [addedRows, setAddedRows] = useState<{ friend_id: string; subscribed: boolean }[]>([]);
@@ -142,12 +143,17 @@ export function FriendsClient() {
             <p className="truncate text-lg font-semibold text-zinc-900">{name || "Friend"}</p>
             <p className="text-xs text-zinc-500">Choose your friends</p>
           </div>
-          <Link
-            href="/settings"
-            className="rounded-full px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200"
-          >
-            Settings
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link href="/dev/characters" className="text-xs font-medium text-zinc-400 underline">
+              캐릭터 편집
+            </Link>
+            <Link
+              href="/settings"
+              className="rounded-full px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200"
+            >
+              Settings
+            </Link>
+          </div>
         </header>
 
         <div className="flex-1 space-y-8 overflow-y-auto px-4 py-4">
