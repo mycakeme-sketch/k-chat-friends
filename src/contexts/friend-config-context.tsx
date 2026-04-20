@@ -109,12 +109,24 @@ export function FriendConfigProvider({ children }: { children: ReactNode }) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-secret": adminSecret,
+        "x-admin-secret": adminSecret.trim(),
       },
       body: JSON.stringify({ config: configToSave }),
     });
     const j = (await res.json()) as { error?: string };
-    if (!res.ok) throw new Error(j.error || "Save failed");
+    if (!res.ok) {
+      let msg = j.error || "Save failed";
+      if (res.status === 401) {
+        msg =
+          "Unauthorized — 입력한 비밀번호가 Vercel의 CHARACTER_ADMIN_SECRET과 일치하지 않습니다. (앞뒤 공백·대소문자·재배포 여부 확인)";
+      } else if (res.status === 503) {
+        msg =
+          "서버에 CHARACTER_ADMIN_SECRET이 없습니다. Vercel Production(또는 사용 중인 환경)에 변수를 넣고 Redeploy 하세요.";
+      } else if (res.status === 500 && msg.includes("SUPABASE_SERVICE_ROLE_KEY")) {
+        msg = `${msg} — 캐릭터 저장은 서비스 롤 키가 필요합니다. Vercel에 SUPABASE_SERVICE_ROLE_KEY를 추가하고 재배포하세요.`;
+      }
+      throw new Error(msg);
+    }
     await refresh();
   }, [refresh]);
 
@@ -123,12 +135,24 @@ export function FriendConfigProvider({ children }: { children: ReactNode }) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-secret": adminSecret,
+        "x-admin-secret": adminSecret.trim(),
       },
       body: JSON.stringify({}),
     });
     const j = (await res.json()) as { error?: string };
-    if (!res.ok) throw new Error(j.error || "Seed failed");
+    if (!res.ok) {
+      let msg = j.error || "Seed failed";
+      if (res.status === 401) {
+        msg =
+          "Unauthorized — 입력한 비밀번호가 Vercel의 CHARACTER_ADMIN_SECRET과 일치하지 않습니다. (앞뒤 공백·대소문자·재배포 여부 확인)";
+      } else if (res.status === 503) {
+        msg =
+          "서버에 CHARACTER_ADMIN_SECRET이 없습니다. Vercel Production(또는 사용 중인 환경)에 변수를 넣고 Redeploy 하세요.";
+      } else if (res.status === 500 && msg.includes("SUPABASE_SERVICE_ROLE_KEY")) {
+        msg = `${msg} — Vercel에 SUPABASE_SERVICE_ROLE_KEY를 추가하고 재배포하세요.`;
+      }
+      throw new Error(msg);
+    }
     await refresh();
   }, [refresh]);
 

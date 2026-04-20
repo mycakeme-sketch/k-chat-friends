@@ -36,6 +36,12 @@ export default function DevCharactersPage() {
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [adminSecret, setAdminSecret] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [statusOk, setStatusOk] = useState(true);
+  const [serverEnv, setServerEnv] = useState<{
+    hasSupabaseUrl: boolean;
+    hasServiceRole: boolean;
+    hasAdminSecret: boolean;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -44,6 +50,31 @@ export default function DevCharactersPage() {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/characters/config-status");
+        const j = (await res.json()) as {
+          hasSupabaseUrl?: boolean;
+          hasServiceRole?: boolean;
+          hasAdminSecret?: boolean;
+        };
+        if (cancelled) return;
+        setServerEnv({
+          hasSupabaseUrl: !!j.hasSupabaseUrl,
+          hasServiceRole: !!j.hasServiceRole,
+          hasAdminSecret: !!j.hasAdminSecret,
+        });
+      } catch {
+        if (!cancelled) setServerEnv(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const storeSecret = (value: string) => {
@@ -197,17 +228,38 @@ export default function DevCharactersPage() {
           <div>
             <h1 className="text-lg font-bold">캐릭터 편집 (Supabase)</h1>
             <p className="text-xs text-zinc-500">
-              저장 시 모든 사용자에게 반영됩니다. Vercel에{" "}
-              <code className="rounded bg-zinc-100 px-1">SUPABASE_SERVICE_ROLE_KEY</code>,{" "}
-              <code className="rounded bg-zinc-100 px-1">CHARACTER_ADMIN_SECRET</code> 필요.
-              {!hasDbRows ? (
-                <span className="ml-1 font-medium text-amber-700">
-                  DB에 캐릭터 없음 → 아래에서 시드하거나 저장하세요.
-                </span>
-              ) : null}
+              저장 시 모든 사용자에게 반영됩니다. 아래는 <strong className="font-medium text-zinc-700">현재 배포 서버</strong>에 설정된
+              환경 변수 여부입니다(비밀 값은 노출되지 않습니다).
             </p>
+            {serverEnv ? (
+              <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                <li className={serverEnv.hasSupabaseUrl ? "text-emerald-700" : "text-red-700"}>
+                  {serverEnv.hasSupabaseUrl ? "✓" : "✗"} <code className="rounded bg-zinc-100 px-1">NEXT_PUBLIC_SUPABASE_URL</code>
+                </li>
+                <li className={serverEnv.hasServiceRole ? "text-emerald-700" : "text-red-700"}>
+                  {serverEnv.hasServiceRole ? "✓" : "✗"}{" "}
+                  <code className="rounded bg-zinc-100 px-1">SUPABASE_SERVICE_ROLE_KEY</code>
+                  <span className="text-zinc-500"> (저장/시드에 필수)</span>
+                </li>
+                <li className={serverEnv.hasAdminSecret ? "text-emerald-700" : "text-red-700"}>
+                  {serverEnv.hasAdminSecret ? "✓" : "✗"}{" "}
+                  <code className="rounded bg-zinc-100 px-1">CHARACTER_ADMIN_SECRET</code>
+                  <span className="text-zinc-500"> (이 화면 비밀번호와 동일)</span>
+                </li>
+              </ul>
+            ) : (
+              <p className="mt-1 text-[11px] text-zinc-400">서버 설정 상태를 불러오는 중…</p>
+            )}
+            {!hasDbRows ? (
+              <p className="mt-1 text-xs font-medium text-amber-800">
+                DB에 캐릭터 없음 → 아래에서 시드하거나 저장하세요.
+              </p>
+            ) : null}
             {statusMsg ? (
-              <p className="mt-1 text-xs text-emerald-700" role="status">
+              <p
+                className={`mt-1 text-xs ${statusOk ? "text-emerald-700" : "text-red-700"}`}
+                role="status"
+              >
                 {statusMsg}
               </p>
             ) : null}
@@ -245,8 +297,10 @@ export default function DevCharactersPage() {
                 setStatusMsg(null);
                 try {
                   await saveToServer(adminSecret.trim(), config);
+                  setStatusOk(true);
                   setStatusMsg("서버에 저장되었습니다.");
                 } catch (e) {
+                  setStatusOk(false);
                   setStatusMsg(e instanceof Error ? e.message : "저장 실패");
                 }
               })();
@@ -262,8 +316,10 @@ export default function DevCharactersPage() {
                 setStatusMsg(null);
                 try {
                   await seedDefaultsToServer(adminSecret.trim());
+                  setStatusOk(true);
                   setStatusMsg("기본 캐릭터(Noah/Yoon)를 DB에 넣었습니다.");
                 } catch (e) {
+                  setStatusOk(false);
                   setStatusMsg(e instanceof Error ? e.message : "시드 실패");
                 }
               })();
