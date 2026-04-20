@@ -6,15 +6,53 @@ import { useFriendConfig } from "@/contexts/friend-config-context";
 import {
   fetchAddedFriendsWithSub,
   fetchDisplayName,
+  setLikeRow,
   setSubscribedRow,
 } from "@/lib/app-data";
-import type { FriendProfile } from "@/types/chat";
+import { formatLikeCount } from "@/lib/format";
+import type { FriendProfile, FriendSlide } from "@/types/chat";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 
 const CARD_IMG_SIZES = "(max-width: 448px) 100vw, 448px";
 const ROW_AVATAR_SIZES = "56px";
+const STORY_AVATAR = "64px";
+
+function getSlideMediaKind(slide: FriendSlide): "image" | "video" {
+  if (slide.media) return slide.media;
+  return /\.(mp4|webm|ogg)(\?.*)?$/i.test(slide.src) ? "video" : "image";
+}
+
+type FeedItem = { friend: FriendProfile; slide: FriendSlide; slideIndex: number };
+
+/** Round-robin across friends so the feed mixes everyone’s first posts, then seconds, etc. */
+function interleaveByFriend(friends: FriendProfile[]): FeedItem[] {
+  const buckets = friends.map((friend) =>
+    friend.slides.map((slide, slideIndex) => ({ friend, slide, slideIndex })),
+  );
+  const out: FeedItem[] = [];
+  let round = 0;
+  let added = true;
+  while (added) {
+    added = false;
+    for (const b of buckets) {
+      if (round < b.length) {
+        out.push(b[round]);
+        added = true;
+      }
+    }
+    round++;
+  }
+  return out;
+}
+
+function fakeRelativeTime(friendId: string, slideIndex: number): string {
+  const n = (friendId.charCodeAt(0) + slideIndex * 11) % 56;
+  if (n < 18) return `${Math.max(1, n % 12)}시간 전`;
+  if (n < 42) return `${(n % 5) + 1}일 전`;
+  return "방금 전";
+}
 
 function FriendListRow({
   friend,
@@ -65,24 +103,128 @@ function FriendListRow({
   );
 }
 
-function FriendPhotoCard({ friend }: { friend: FriendProfile }) {
+function StoriesStrip({ friends }: { friends: FriendProfile[] }) {
+  if (friends.length === 0) return null;
   return (
-    <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl bg-zinc-200 ring-1 ring-black/5">
-      <Image
-        src={friend.avatar}
-        alt=""
-        fill
-        className="object-cover"
-        sizes={CARD_IMG_SIZES}
-        priority={friend.id === "noah"}
-        unoptimized
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/88 via-black/30 to-black/5" />
-      <div className="absolute bottom-0 left-0 right-0 p-4 pt-16">
-        <p className="text-xl font-bold tracking-tight text-white drop-shadow-md">{friend.name}</p>
-        <p className="mt-1 text-sm leading-snug text-white/95 drop-shadow">{friend.tagline}</p>
+    <div className="-mx-4 border-b border-zinc-100 bg-white px-4 py-3">
+      <p className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-wide text-zinc-400">Stories</p>
+      <div className="flex gap-4 overflow-x-auto pb-1">
+        {friends.map((f) => {
+          const label = f.name.split(/\s+/)[0] ?? f.name;
+          return (
+            <Link
+              key={f.id}
+              href={`/friends/${f.id}`}
+              className="flex w-[72px] shrink-0 flex-col items-center gap-1 active:opacity-90"
+            >
+              <div className="rounded-full bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 p-[2px]">
+                <div className="h-16 w-16 overflow-hidden rounded-full bg-white p-[2px]">
+                  <div className="relative h-full w-full overflow-hidden rounded-full bg-zinc-200">
+                    <Image
+                      src={f.avatar}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      sizes={STORY_AVATAR}
+                      unoptimized
+                    />
+                  </div>
+                </div>
+              </div>
+              <span className="w-full truncate text-center text-[11px] text-zinc-700">{label}</span>
+            </Link>
+          );
+        })}
       </div>
     </div>
+  );
+}
+
+function FeedPostCard({
+  item,
+  liked,
+  onToggleLike,
+  canLike,
+}: {
+  item: FeedItem;
+  liked: boolean;
+  onToggleLike: () => void;
+  canLike: boolean;
+}) {
+  const { friend, slide, slideIndex } = item;
+  const kind = getSlideMediaKind(slide);
+  const count = slide.baseLikes + (liked ? 1 : 0);
+  const shortName = friend.name.split(/\s+/)[0] ?? friend.name;
+
+  return (
+    <article className="border-b border-zinc-200 bg-white pb-4 last:border-b-0">
+      <div className="flex items-center gap-3 px-3 py-2">
+        <Link
+          href={`/friends/${friend.id}`}
+          className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-zinc-200 ring-1 ring-zinc-200/80"
+        >
+          <Image src={friend.avatar} alt="" fill className="object-cover" sizes={ROW_AVATAR_SIZES} unoptimized />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <Link href={`/friends/${friend.id}`} className="flex flex-wrap items-baseline gap-2">
+            <span className="text-sm font-semibold text-zinc-900">{friend.name}</span>
+            <span className="text-xs text-zinc-400">{fakeRelativeTime(friend.id, slideIndex)}</span>
+          </Link>
+        </div>
+      </div>
+
+      <Link
+        href={`/friends/${friend.id}?slide=${slideIndex}`}
+        className="relative block aspect-[4/5] w-full bg-zinc-100"
+      >
+        {kind === "video" ? (
+          <video
+            src={slide.src}
+            className="absolute inset-0 h-full w-full object-cover"
+            muted
+            playsInline
+            autoPlay
+            loop
+          />
+        ) : (
+          <Image
+            src={slide.src}
+            alt={slide.alt}
+            fill
+            className="object-cover"
+            sizes={CARD_IMG_SIZES}
+            unoptimized
+          />
+        )}
+      </Link>
+
+      <div className="space-y-2 px-3 pt-2">
+        <div className="flex items-center gap-5">
+          <button
+            type="button"
+            onClick={() => canLike && onToggleLike()}
+            disabled={!canLike}
+            className="flex items-center gap-1.5 text-zinc-900 disabled:opacity-40"
+            aria-pressed={liked}
+            aria-label={liked ? "Unlike" : "Like"}
+          >
+            <span className="text-2xl" style={{ filter: liked ? "none" : "grayscale(1)" }}>
+              {liked ? "❤️" : "🤍"}
+            </span>
+            <span className="text-sm font-medium tabular-nums">{formatLikeCount(count)}</span>
+          </button>
+          <Link href={`/chat/${friend.id}`} className="text-sm font-medium text-zinc-600">
+            Message
+          </Link>
+        </div>
+        <p className="text-sm leading-relaxed text-zinc-900">
+          <Link href={`/friends/${friend.id}`} className="font-semibold">
+            {shortName}
+          </Link>{" "}
+          <span className="text-zinc-800">{slide.caption}</span>
+        </p>
+      </div>
+    </article>
   );
 }
 
@@ -92,6 +234,7 @@ export function FriendsClient() {
   const [name, setName] = useState("");
   const [addedRows, setAddedRows] = useState<{ friend_id: string; subscribed: boolean }[]>([]);
   const [listReady, setListReady] = useState(false);
+  const [likeMap, setLikeMap] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -111,6 +254,55 @@ export function FriendsClient() {
     void refresh();
   }, [refresh]);
 
+  const addedSet = useMemo(() => new Set(addedRows.map((r) => r.friend_id)), [addedRows]);
+  const subMap = useMemo(
+    () => Object.fromEntries(addedRows.map((r) => [r.friend_id, r.subscribed])),
+    [addedRows],
+  );
+  const discoverFriends = useMemo(() => {
+    return FRIENDS.filter((f) => !addedSet.has(f.id));
+  }, [FRIENDS, addedSet]);
+  const feedItems = useMemo(() => interleaveByFriend(discoverFriends), [discoverFriends]);
+
+  useEffect(() => {
+    if (!user || discoverFriends.length === 0) {
+      setLikeMap({});
+      return;
+    }
+    const ids = discoverFriends.map((f) => f.id);
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("slide_likes")
+        .select("friend_id, slide_index, liked")
+        .eq("user_id", user.id)
+        .in("friend_id", ids);
+      if (error || cancelled) return;
+      const m: Record<string, boolean> = {};
+      data?.forEach((r) => {
+        if (r.liked) m[`${r.friend_id}:${r.slide_index}`] = true;
+      });
+      setLikeMap(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, supabase, discoverFriends]);
+
+  const toggleFeedLike = useCallback(
+    async (friendId: string, slideIndex: number) => {
+      if (!user) return;
+      const key = `${friendId}:${slideIndex}`;
+      let next = false;
+      setLikeMap((prev) => {
+        next = !prev[key];
+        return { ...prev, [key]: next };
+      });
+      await setLikeRow(supabase, user.id, friendId, slideIndex, next);
+    },
+    [user, supabase],
+  );
+
   const mockSubscribe = async (friendId: string, e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -118,10 +310,6 @@ export function FriendsClient() {
     await setSubscribedRow(supabase, user.id, friendId, true);
     await refresh();
   };
-
-  const addedSet = new Set(addedRows.map((r) => r.friend_id));
-  const subMap = Object.fromEntries(addedRows.map((r) => [r.friend_id, r.subscribed]));
-  const discoverFriends = FRIENDS.filter((f) => !addedSet.has(f.id));
 
   if (!listReady) {
     return (
@@ -141,7 +329,7 @@ export function FriendsClient() {
         <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-lg font-semibold text-zinc-900">{name || "Friend"}</p>
-            <p className="text-xs text-zinc-500">Choose your friends</p>
+            <p className="text-xs text-zinc-500">Friends feed</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Link href="/dev/characters" className="text-xs font-medium text-zinc-400 underline">
@@ -156,9 +344,9 @@ export function FriendsClient() {
           </div>
         </header>
 
-        <div className="flex-1 space-y-8 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto">
           {addedRows.length > 0 && (
-            <section className="rounded-2xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-100">
+            <section className="mx-4 mt-4 rounded-2xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-100">
               <h2 className="px-1 pb-2 pt-1 text-[13px] font-semibold uppercase tracking-wide text-zinc-400">
                 Your friends
               </h2>
@@ -180,21 +368,32 @@ export function FriendsClient() {
             </section>
           )}
 
-          {discoverFriends.length > 0 && (
-            <section>
-              <h2 className="text-[13px] font-semibold uppercase tracking-wide text-zinc-400">
-                Choose your friends
+          {discoverFriends.length > 0 ? (
+            <section className="mt-2">
+              <StoriesStrip friends={discoverFriends} />
+              <h2 className="px-4 pb-2 pt-4 text-[13px] font-semibold uppercase tracking-wide text-zinc-400">
+                Feed
               </h2>
-              <ul className="mt-4 space-y-5">
-                {discoverFriends.map((f) => (
-                  <li key={f.id}>
-                    <Link href={`/friends/${f.id}`} className="block active:opacity-95">
-                      <FriendPhotoCard friend={f} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <div className="pb-8">
+                {feedItems.map((item) => {
+                  const key = `${item.friend.id}:${item.slideIndex}`;
+                  const liked = !!likeMap[key];
+                  return (
+                    <FeedPostCard
+                      key={key}
+                      item={item}
+                      liked={liked}
+                      canLike={!!user}
+                      onToggleLike={() => void toggleFeedLike(item.friend.id, item.slideIndex)}
+                    />
+                  );
+                })}
+              </div>
             </section>
+          ) : (
+            <p className="px-4 py-10 text-center text-sm text-zinc-500">
+              You&apos;ve added everyone — open chats from &quot;Your friends&quot; above.
+            </p>
           )}
         </div>
       </MobileShell>

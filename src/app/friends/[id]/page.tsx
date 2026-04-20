@@ -14,6 +14,10 @@ function FriendDetailInner() {
   const { getFriend, ready } = useFriendConfig();
   const friend = ready ? getFriend(id) : undefined;
   const hideAdd = searchParams.get("from") === "chat";
+  const slideRaw = searchParams.get("slide");
+  const parsed = slideRaw != null ? Number.parseInt(slideRaw, 10) : 0;
+  const initialSlide =
+    Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, (friend?.slides.length ?? 1) - 1) : 0;
 
   if (!ready) {
     return (
@@ -22,7 +26,7 @@ function FriendDetailInner() {
   }
   if (!friend) notFound();
 
-  return <FriendDetailClient friend={friend} hideAdd={hideAdd} />;
+  return <FriendDetailClient friend={friend} hideAdd={hideAdd} initialSlide={initialSlide} />;
 }
 
 export default function FriendDetailPage() {

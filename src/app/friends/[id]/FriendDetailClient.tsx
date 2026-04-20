@@ -11,9 +11,12 @@ import { useCallback, useEffect, useState } from "react";
 export function FriendDetailClient({
   friend,
   hideAdd = false,
+  initialSlide = 0,
 }: {
   friend: FriendProfile;
   hideAdd?: boolean;
+  /** Which slide to open first (e.g. from feed deep link `?slide=`) */
+  initialSlide?: number;
 }) {
   const router = useRouter();
   const { supabase, user } = useAuth();
@@ -64,6 +67,7 @@ export function FriendDetailClient({
       <MobileShell className="min-h-dvh bg-black text-white">
         <ReelCarousel
           friend={friend}
+          initialSlide={initialSlide}
           showAddButton={!hideAdd}
           onClose={() => router.push("/friends")}
           onAddAndChat={() => {
