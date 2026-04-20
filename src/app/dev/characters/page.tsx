@@ -30,7 +30,15 @@ function newFriend(): FriendProfile {
 }
 
 export default function DevCharactersPage() {
-  const { config, setConfig, saveToServer, seedDefaultsToServer, hasDbRows } = useFriendConfig();
+  const {
+    config,
+    setConfig,
+    saveToServer,
+    seedDefaultsToServer,
+    hasDbRows,
+    ready: configReady,
+    refresh: refreshFromDb,
+  } = useFriendConfig();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [slidesJson, setSlidesJson] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -221,6 +229,14 @@ export default function DevCharactersPage() {
     ? config.promptsByPromptId[selected.promptId] ?? { system: "", hintStyle: "" }
     : { system: "", hintStyle: "" };
 
+  if (!configReady) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-zinc-100 text-sm text-zinc-600">
+        Supabase에서 캐릭터 설정을 불러오는 중…
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh bg-zinc-100 text-zinc-900">
       <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white px-4 py-3 shadow-sm">
@@ -268,8 +284,15 @@ export default function DevCharactersPage() {
             <Link href="/friends" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-white">
               앱으로
             </Link>
+            <button
+              type="button"
+              className="text-zinc-600 underline"
+              onClick={() => void refreshFromDb()}
+            >
+              DB에서 다시 불러오기
+            </button>
             <Link href="/dev/characters" className="text-zinc-600 underline">
-              새로고침
+              페이지 새로고침
             </Link>
           </nav>
         </div>

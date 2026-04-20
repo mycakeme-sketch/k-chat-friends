@@ -229,7 +229,7 @@ function FeedPostCard({
 }
 
 export function FriendsClient() {
-  const { friends: FRIENDS } = useFriendConfig();
+  const { friends: FRIENDS, ready: configReady } = useFriendConfig();
   const { supabase, user } = useAuth();
   const [name, setName] = useState("");
   const [addedRows, setAddedRows] = useState<{ friend_id: string; subscribed: boolean }[]>([]);
@@ -237,7 +237,10 @@ export function FriendsClient() {
   const [likeMap, setLikeMap] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setListReady(true);
+      return;
+    }
     try {
       const [n, rows] = await Promise.all([
         fetchDisplayName(supabase, user.id),
@@ -311,7 +314,7 @@ export function FriendsClient() {
     await refresh();
   };
 
-  if (!listReady) {
+  if (!configReady || !listReady) {
     return (
       <PaddedAppFrame>
         <MobileShell>

@@ -47,7 +47,8 @@ export function FriendConfigProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [hasDbRows, setHasDbRows] = useState(false);
 
-  const refresh = useCallback(async () => {
+  /** DB → React state (초기 로드·저장 후·탭 복귀 시 동일 경로) */
+  const loadFromDatabase = useCallback(async () => {
     try {
       const sb = createClient();
       const { data, error } = await sb
@@ -68,37 +69,40 @@ export function FriendConfigProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    await loadFromDatabase();
+  }, [loadFromDatabase]);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const sb = createClient();
-        const { data, error } = await sb
-          .from("characters")
-          .select("*")
-          .order("sort_order", { ascending: true });
-        if (cancelled) return;
-        if (error) throw error;
-        if (data?.length) {
-          setConfigState(dbRowsToConfig(data as CharacterRow[]));
-          setHasDbRows(true);
-        } else {
-          setConfigState(getDefaultFriendConfig());
-          setHasDbRows(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setConfigState(getDefaultFriendConfig());
-          setHasDbRows(false);
-        }
-      } finally {
-        if (!cancelled) setReady(true);
-      }
+    void (async () => {
+      await loadFromDatabase();
+      if (!cancelled) setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadFromDatabase]);
+
+  /** 다른 탭에서 저장 후 돌아오거나, bfcache 복원 후에도 최신 characters 반영 */
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const scheduleReload = () => {
+      if (document.visibilityState !== "visible") return;
+      if (t) clearTimeout(t);
+      t = setTimeout(() => void loadFromDatabase(), 200);
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) scheduleReload();
+    };
+    document.addEventListener("visibilitychange", scheduleReload);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", scheduleReload);
+      window.removeEventListener("pageshow", onPageShow);
+      if (t) clearTimeout(t);
+    };
+  }, [loadFromDatabase]);
 
   const setConfig = useCallback((next: FriendConfigStorage | ((prev: FriendConfigStorage) => FriendConfigStorage)) => {
     setConfigState(next);
